@@ -1418,6 +1418,19 @@ namespace bgfx
 	///
 	void readTexture(FrameBufferHandle _handle, uint8_t _attachment, void* _data);
 
+        /// Read pixels frome a region of a framebuffer
+        ///
+        /// @param[in] _handle Frame buffer handle.
+        /// @param[in] _x Offset of the pixel region.
+        /// @param[in] _y Offset of the pixel region.
+        /// @param[in] _width of the pixel region.
+        /// @param[in] _height of the pixel region.
+        /// @param[in] _data Destination buffer.
+        ///
+        /// @attention C99 equivalent is `bgfx_read_pixels`.
+        ///
+        void readPixels(FrameBufferHandle _handle, uint32_t _x, uint32_t _y, uint32_t _width, uint32_t _height, void* _data);
+
 	/// Destroy texture.
 	///
 	/// @param[in] _handle Texture handle.
