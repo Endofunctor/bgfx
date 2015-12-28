@@ -2137,6 +2137,30 @@ again:
 				}
 				break;
 
+                        case CommandBuffer::ReadPixels:
+                                {
+                                        FrameBufferHandle handle;
+                                        _cmdbuf.read(handle);
+
+                                        uint32_t x;
+                                        _cmdbuf.read(x);
+
+                                        uint32_t y;
+                                        _cmdbuf.read(y);
+
+                                        uint32_t width;
+                                        _cmdbuf.read(width);
+
+                                        uint32_t height;
+                                        _cmdbuf.read(height);
+
+                                        void* data;
+                                        _cmdbuf.read(data);
+
+                                        m_renderCtx->readPixels(handle, x, y, width, height, data);
+                                }
+                                break;
+
 			case CommandBuffer::ResizeTexture:
 				{
 					TextureHandle handle;
@@ -3026,7 +3050,14 @@ again:
 		s_ctx->readTexture(_handle, _attachment, _data);
 	}
 
-	FrameBufferHandle createFrameBuffer(uint16_t _width, uint16_t _height, TextureFormat::Enum _format, uint32_t _textureFlags)
+        void readPixels(FrameBufferHandle _handle, uint32_t _x, uint32_t _y, uint32_t _width, uint32_t _height, void* _data)
+        {
+                BGFX_CHECK_MAIN_THREAD();
+                BX_CHECK(NULL != _data, "_data can't be NULL");
+                s_ctx->readPixels(_handle, _x, _y, _width, _height, _data);
+        }
+
+        FrameBufferHandle createFrameBuffer(uint16_t _width, uint16_t _height, TextureFormat::Enum _format, uint32_t _textureFlags)
 	{
 		_textureFlags |= _textureFlags&BGFX_TEXTURE_RT_MSAA_MASK ? 0 : BGFX_TEXTURE_RT;
 		TextureHandle th = createTexture2D(_width, _height, 1, _format, _textureFlags);
@@ -3990,6 +4021,12 @@ BGFX_C_API void bgfx_read_texture(bgfx_texture_handle_t _handle, void* _data)
 {
 	union { bgfx_texture_handle_t c; bgfx::TextureHandle cpp; } handle = { _handle };
 	bgfx::readTexture(handle.cpp, _data);
+}
+
+BGFX_C_API void bgfx_read_pixels(bgfx_frame_buffer_handle_t _handle, uint32_t _x, uint32_t _y, uint32_t _width, uint32_t _height, void* _data)
+{
+        union { bgfx_frame_buffer_handle_t c; bgfx::FrameBufferHandle cpp; } handle = { _handle };
+        bgfx::readPixels(handle.cpp, _x, _y, _width, _height, _data);
 }
 
 BGFX_C_API void bgfx_read_frame_buffer(bgfx_frame_buffer_handle_t _handle, uint8_t _attachment, void* _data)

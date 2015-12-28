@@ -2182,7 +2182,27 @@ namespace bgfx { namespace gl
 			}
 		}
 
-		void resizeTexture(TextureHandle _handle, uint16_t _width, uint16_t _height) BX_OVERRIDE
+                void readPixels(FrameBufferHandle _handle, uint32_t _x, uint32_t _y, uint32_t _width, uint32_t _height, void* _data) BX_OVERRIDE
+                {
+                        const FrameBufferGL& frameBuffer = m_frameBuffers[_handle.idx];
+                        const TextureGL& texture = m_textures[frameBuffer.m_th[0].idx];
+                        GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, frameBuffer.m_fbo[0]) );
+
+                        GL_CHECK(glPixelStorei(GL_PACK_ALIGNMENT, 1) );
+
+                        GL_CHECK(glReadPixels(_x
+                                              , _y
+                                              , _width
+                                              , _height
+                                              , texture.m_fmt
+                                              , texture.m_type
+                                              , _data
+                                   ) );
+
+                        GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, 0) );
+                }
+
+                void resizeTexture(TextureHandle _handle, uint16_t _width, uint16_t _height) BX_OVERRIDE
 		{
 			TextureGL& texture = m_textures[_handle.idx];
 

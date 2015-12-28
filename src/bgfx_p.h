@@ -618,6 +618,7 @@ namespace bgfx
 			DestroyFrameBuffer,
 			DestroyUniform,
 			ReadTexture,
+                        ReadPixels,
 			SaveScreenShot,
 		};
 
@@ -2054,6 +2055,7 @@ namespace bgfx
 		virtual void submit(Frame* _render, ClearQuad& _clearQuad, TextVideoMemBlitter& _textVideoMemBlitter) = 0;
 		virtual void blitSetup(TextVideoMemBlitter& _blitter) = 0;
 		virtual void blitRender(TextVideoMemBlitter& _blitter, uint32_t _numIndices) = 0;
+                virtual void readPixels(FrameBufferHandle _handle, uint32_t _x, uint32_t _y, uint32_t _width, uint32_t _height, void* data) = 0;
 	};
 
 	inline RendererContextI::~RendererContextI()
@@ -3107,6 +3109,17 @@ namespace bgfx
 			BX_CHECK(isValid(textureHandle), "Frame buffer texture %d is invalid.", _attachment);
 			readTexture(textureHandle, _data);
 		}
+
+                BGFX_API_FUNC(void readPixels(FrameBufferHandle _handle, uint32_t _x, uint32_t _y, uint32_t _width, uint32_t _height, void* _data) )
+                {
+                        CommandBuffer& cmdbuf = getCommandBuffer(CommandBuffer::ReadPixels);
+                        cmdbuf.write(_handle);
+                        cmdbuf.write(_x);
+                        cmdbuf.write(_y);
+                        cmdbuf.write(_width);
+                        cmdbuf.write(_height);
+                        cmdbuf.write(_data);
+                }
 
 		void resizeTexture(TextureHandle _handle, uint16_t _width, uint16_t _height)
 		{
