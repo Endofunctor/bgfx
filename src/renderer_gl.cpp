@@ -2187,15 +2187,14 @@ namespace bgfx { namespace gl
                         const FrameBufferGL& frameBuffer = m_frameBuffers[_handle.idx];
                         const TextureGL& texture = m_textures[frameBuffer.m_th[0].idx];
                         GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, frameBuffer.m_fbo[0]) );
-
-                        GL_CHECK(glPixelStorei(GL_PACK_ALIGNMENT, 1) );
+			GL_CHECK(glReadBuffer(GL_COLOR_ATTACHMENT0) );
 
                         GL_CHECK(glReadPixels(_x
                                               , _y
                                               , _width
                                               , _height
-                                              , texture.m_fmt
-                                              , texture.m_type
+                                              , m_readPixelsFmt
+                                              , GL_UNSIGNED_BYTE
                                               , _data
                                    ) );
 
