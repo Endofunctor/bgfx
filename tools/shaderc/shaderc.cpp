@@ -1,9 +1,13 @@
 /*
- * Copyright 2011-2015 Branimir Karadzic. All rights reserved.
- * License: http://www.opensource.org/licenses/BSD-2-Clause
+ * Copyright 2011-2016 Branimir Karadzic. All rights reserved.
+ * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
 #include "shaderc.h"
+#include <bx/tokenizecmd.h>
+
+namespace bgfx
+{
 
 bool g_verbose = false;
 
@@ -293,14 +297,14 @@ private:
 	uint32_t m_size;
 };
 
-void strins(char* _str, const char* _insert)
+void strInsert(char* _str, const char* _insert)
 {
 	size_t len = strlen(_insert);
 	memmove(&_str[len], _str, strlen(_str) );
 	memcpy(_str, _insert, len);
 }
 
-void strreplace(char* _str, const char* _find, const char* _replace)
+void strReplace(char* _str, const char* _find, const char* _replace)
 {
 	const size_t len = strlen(_find);
 
@@ -317,6 +321,12 @@ void strreplace(char* _str, const char* _find, const char* _replace)
 	{
 		memcpy(ptr, replace, len);
 	}
+}
+
+void strNormalizeEol(char* _str)
+{
+	strReplace(_str, "\r\n", "\n");
+	strReplace(_str, "\r",   "\n");
 }
 
 void printCode(const char* _code, int32_t _line, int32_t _start, int32_t _end)
@@ -587,7 +597,7 @@ void addFragData(Preprocessor& _preprocessor, char* _data, uint32_t _idx, bool _
 	char replace[32];
 	bx::snprintf(replace, sizeof(replace), "gl_FragData_%d_", _idx);
 
-	strreplace(_data, find, replace);
+	strReplace(_data, find, replace);
 
 	_preprocessor.writef(
 		" \\\n\t%sout vec4 gl_FragData_%d_ : SV_TARGET%d"
@@ -602,7 +612,7 @@ void voidFragData(char* _data, uint32_t _idx)
 	char find[32];
 	bx::snprintf(find, sizeof(find), "gl_FragData[%d]", _idx);
 
-	strreplace(_data, find, "bgfx_VoidFrag");
+	strReplace(_data, find, "bgfx_VoidFrag");
 }
 
 // c - compute
@@ -633,8 +643,8 @@ void help(const char* _error = NULL)
 
 	fprintf(stderr
 		, "shaderc, bgfx shader compiler tool\n"
-		  "Copyright 2011-2015 Branimir Karadzic. All rights reserved.\n"
-		  "License: http://www.opensource.org/licenses/BSD-2-Clause\n\n"
+		  "Copyright 2011-2016 Branimir Karadzic. All rights reserved.\n"
+		  "License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause\n\n"
 		);
 
 	fprintf(stderr
@@ -656,6 +666,7 @@ void help(const char* _error = NULL)
 		  "           osx\n"
 		  "           windows\n"
 		  "      --preprocess              Preprocess only.\n"
+		  "      --define <defines>        Add defines to preprocessor (semicolon separated).\n"
 		  "      --raw                     Do not process shader. No preprocessor, and no glsl-optimizer (GLSL only).\n"
 		  "      --type <type>             Shader type (vertex, fragment)\n"
 		  "      --varyingdef <file path>  Path to varying.def.sc file.\n"
@@ -676,7 +687,7 @@ void help(const char* _error = NULL)
 		);
 }
 
-int main(int _argc, const char* _argv[])
+int compileShader(int _argc, const char* _argv[])
 {
 	bx::CommandLine cmdLine(_argc, _argv);
 
@@ -799,6 +810,21 @@ int main(int _argc, const char* _argv[])
 			dir.assign(filePath, base-filePath);
 			preprocessor.addInclude(dir.c_str() );
 		}
+	}
+
+	const char* defines = cmdLine.findOption("define");
+	while (NULL != defines
+	&&    '\0'  != *defines)
+	{
+		defines = bx::strws(defines);
+		const char* eol = strchr(defines, ';');
+		if (NULL == eol)
+		{
+			eol = defines + strlen(defines);
+		}
+		std::string define(defines, eol);
+		preprocessor.setDefine(define.c_str());
+		defines = ';' == *eol ? eol+1 : eol;
 	}
 
 	preprocessor.setDefaultDefine("BX_PLATFORM_ANDROID");
@@ -1014,6 +1040,8 @@ int main(int _argc, const char* _argv[])
 			data[size] = '\n';
 			memset(&data[size+1], 0, padding);
 			fclose(file);
+
+			strNormalizeEol(data);
 
 			input = const_cast<char*>(bx::strws(data) );
 			while (input[0] == '$')
@@ -1408,7 +1436,7 @@ int main(int _argc, const char* _argv[])
 						const char* brace = strstr(entry, "{");
 						if (NULL != brace)
 						{
-							strins(const_cast<char*>(brace+1), "\nvec4 bgfx_VoidFrag;\n");
+							strInsert(const_cast<char*>(brace+1), "\nvec4 bgfx_VoidFrag;\n");
 						}
 
 						const bool hasFragCoord   = NULL != strstr(input, "gl_FragCoord") || hlsl > 3 || hlsl == 2;
@@ -1540,7 +1568,7 @@ int main(int _argc, const char* _argv[])
 							const char* end = bx::strmb(brace, '{', '}');
 							if (NULL != end)
 							{
-								strins(const_cast<char*>(end), "__RETURN__;\n");
+								strInsert(const_cast<char*>(end), "__RETURN__;\n");
 							}
 						}
 
@@ -1803,4 +1831,11 @@ int main(int _argc, const char* _argv[])
 
 	fprintf(stderr, "Failed to build shader.\n");
 	return EXIT_FAILURE;
+}
+
+} // namespace bgfx
+
+int main(int _argc, const char* _argv[])
+{
+	return bgfx::compileShader(_argc, _argv);
 }
