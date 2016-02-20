@@ -675,6 +675,7 @@ namespace ImGui
     inline    ImGuiWindow*  GetCurrentWindowRead()      { ImGuiState& g = *GImGui; return g.CurrentWindow; }
     inline    ImGuiWindow*  GetCurrentWindow()          { ImGuiState& g = *GImGui; g.CurrentWindow->Accessed = true; return g.CurrentWindow; }
     IMGUI_API ImGuiWindow*  GetParentWindow();
+    IMGUI_API ImGuiWindow*  FindWindowByName(const char* name);
     IMGUI_API void          FocusWindow(ImGuiWindow* window);
 
     IMGUI_API void          SetActiveID(ImGuiID id, ImGuiWindow* window);
@@ -692,7 +693,6 @@ namespace ImGui
     IMGUI_API void          FocusableItemUnregister(ImGuiWindow* window);
     IMGUI_API ImVec2        CalcItemSize(ImVec2 size, float default_x, float default_y);
     IMGUI_API float         CalcWrapWidthForPos(const ImVec2& pos, float wrap_pos_x);
-    IMGUI_API void          SetItemAllowOverlap();      // Allow last item to be overlapped by a subsequent item
 
     IMGUI_API void          OpenPopupEx(const char* str_id, bool reopen_existing);
 

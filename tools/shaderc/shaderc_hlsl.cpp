@@ -7,9 +7,11 @@
 
 #if SHADERC_CONFIG_HLSL
 
-//#define __REQUIRED_RPCNDR_H_VERSION__ 475
-//#define __in
-//#define __out
+#if defined(__MINGW32__)
+#	define __REQUIRED_RPCNDR_H_VERSION__ 475
+#	define __in
+#	define __out
+#endif // defined(__MINGW32__)
 
 #include <d3dcompiler.h>
 #include <d3d11shader.h>
@@ -21,12 +23,10 @@
 
 namespace bgfx
 {
-	static const GUID IID_ID3D11ShaderReflection = { 0x6e6ffa6a, 0x9bae, 0x4613, { 0xa5, 0x1e, 0x91, 0x65, 0x2d, 0x50, 0x8c, 0x21 } };
-
 	typedef HRESULT(WINAPI* PFN_D3D_COMPILE)(_In_reads_bytes_(SrcDataSize) LPCVOID pSrcData
 		, _In_ SIZE_T SrcDataSize
 		, _In_opt_ LPCSTR pSourceName
-		, _In_reads_opt_(_Inexpressible_(pDefines->Name != NULL)) CONST D3D_SHADER_MACRO* pDefines
+		, _In_reads_opt_(_Inexpressible_(pDefines->Name != NULL) ) CONST D3D_SHADER_MACRO* pDefines
 		, _In_opt_ ID3DInclude* pInclude
 		, _In_opt_ LPCSTR pEntrypoint
 		, _In_ LPCSTR pTarget
@@ -59,6 +59,63 @@ namespace bgfx
 	PFN_D3D_DISASSEMBLE  D3DDisassemble;
 	PFN_D3D_REFLECT      D3DReflect;
 	PFN_D3D_STRIP_SHADER D3DStripShader;
+
+	struct D3DCompiler
+	{
+		const char* fileName;
+		const GUID  IID_ID3D11ShaderReflection;
+	};
+
+	static const D3DCompiler s_d3dcompiler[] =
+	{ // BK - the only different in interface is GetRequiresFlags at the end
+	  //      of IID_ID3D11ShaderReflection47 (which is not used anyway).
+		{ "D3DCompiler_47.dll", { 0x8d536ca1, 0x0cca, 0x4956, { 0xa8, 0x37, 0x78, 0x69, 0x63, 0x75, 0x55, 0x84 } } },
+		{ "D3DCompiler_46.dll", { 0x0a233719, 0x3960, 0x4578, { 0x9d, 0x7c, 0x20, 0x3b, 0x8b, 0x1d, 0x9c, 0xc1 } } },
+		{ "D3DCompiler_45.dll", { 0x0a233719, 0x3960, 0x4578, { 0x9d, 0x7c, 0x20, 0x3b, 0x8b, 0x1d, 0x9c, 0xc1 } } },
+		{ "D3DCompiler_44.dll", { 0x0a233719, 0x3960, 0x4578, { 0x9d, 0x7c, 0x20, 0x3b, 0x8b, 0x1d, 0x9c, 0xc1 } } },
+		{ "D3DCompiler_43.dll", { 0x0a233719, 0x3960, 0x4578, { 0x9d, 0x7c, 0x20, 0x3b, 0x8b, 0x1d, 0x9c, 0xc1 } } },
+	};
+
+	static const D3DCompiler* s_compiler;
+	static void* s_d3dcompilerdll;
+
+	const D3DCompiler* load()
+	{
+		for (uint32_t ii = 0; ii < BX_COUNTOF(s_d3dcompiler); ++ii)
+		{
+			const D3DCompiler* compiler = &s_d3dcompiler[ii];
+			s_d3dcompilerdll = bx::dlopen(compiler->fileName);
+			if (NULL == s_d3dcompilerdll)
+			{
+				continue;
+			}
+
+			D3DCompile     = (PFN_D3D_COMPILE     )bx::dlsym(s_d3dcompilerdll, "D3DCompile");
+			D3DDisassemble = (PFN_D3D_DISASSEMBLE )bx::dlsym(s_d3dcompilerdll, "D3DDisassemble");
+			D3DReflect     = (PFN_D3D_REFLECT     )bx::dlsym(s_d3dcompilerdll, "D3DReflect");
+			D3DStripShader = (PFN_D3D_STRIP_SHADER)bx::dlsym(s_d3dcompilerdll, "D3DStripShader");
+
+			if (NULL == D3DCompile
+			||  NULL == D3DDisassemble
+			||  NULL == D3DReflect
+			||  NULL == D3DStripShader)
+			{
+				bx::dlclose(s_d3dcompilerdll);
+				continue;
+			}
+
+			BX_TRACE("Loaded %s compiler.", compiler->fileName);
+			return compiler;
+		}
+
+		fprintf(stderr, "Error: Unable to open D3DCompiler_*.dll shader compiler.\n");
+		return NULL;
+	}
+
+	void unload()
+	{
+		bx::dlclose(s_d3dcompilerdll);
+	}
 
 	struct CTHeader
 	{
@@ -127,7 +184,7 @@ namespace bgfx
 		{
 			const RemapInputSemantic& ris = s_remapInputSemantic[ii];
 			if (0 == strcmp(ris.m_name, _name)
-				&& ris.m_index == _index)
+			&&  ris.m_index == _index)
 			{
 				return ris;
 			}
@@ -164,7 +221,7 @@ namespace bgfx
 			const UniformRemap& remap = s_uniformRemap[ii];
 
 			if (remap.paramClass == constDesc.Class
-				&&  remap.paramType == constDesc.Type)
+			&&  remap.paramType == constDesc.Type)
 			{
 				if (D3D_SVC_MATRIX_COLUMNS != constDesc.Class)
 				{
@@ -172,7 +229,7 @@ namespace bgfx
 				}
 
 				if (remap.columns == constDesc.Columns
-					&&  remap.rows == constDesc.Rows)
+				&&  remap.rows == constDesc.Rows)
 				{
 					return remap.id;
 				}
@@ -222,7 +279,7 @@ namespace bgfx
 		// parse the shader blob for the constant table
 		const size_t codeSize = _code->GetBufferSize();
 		const uint32_t* ptr = (const uint32_t*)_code->GetBufferPointer();
-		const uint32_t* end = (const uint32_t*)((const uint8_t*)ptr + codeSize);
+		const uint32_t* end = (const uint32_t*)( (const uint8_t*)ptr + codeSize);
 		const CTHeader* header = NULL;
 
 		ptr++;	// first byte is shader type / version; skip it since we already know
@@ -230,7 +287,7 @@ namespace bgfx
 		while (ptr < end && *ptr != D3DSIO_END)
 		{
 			uint32_t cur = *ptr++;
-			if ((cur & D3DSI_OPCODE_MASK) != D3DSIO_COMMENT)
+			if ( (cur & D3DSI_OPCODE_MASK) != D3DSIO_COMMENT)
 			{
 				continue;
 			}
@@ -243,7 +300,7 @@ namespace bgfx
 				// found the constant table data
 				header = (const CTHeader*)(ptr + 1);
 				uint32_t tableSize = (commentSize - 1) * 4;
-				if (tableSize < sizeof(CTHeader) || header->Size != sizeof(CTHeader))
+				if (tableSize < sizeof(CTHeader) || header->Size != sizeof(CTHeader) )
 				{
 					fprintf(stderr, "Error: Invalid constant table data\n");
 					return false;
@@ -319,10 +376,10 @@ namespace bgfx
 		ID3D11ShaderReflection* reflect = NULL;
 		HRESULT hr = D3DReflect(_code->GetBufferPointer()
 			, _code->GetBufferSize()
-			, IID_ID3D11ShaderReflection
+			, s_compiler->IID_ID3D11ShaderReflection
 			, (void**)&reflect
 			);
-		if (FAILED(hr))
+		if (FAILED(hr) )
 		{
 			fprintf(stderr, "Error: D3DReflect failed 0x%08x\n", (uint32_t)hr);
 			return false;
@@ -330,7 +387,7 @@ namespace bgfx
 
 		D3D11_SHADER_DESC desc;
 		hr = reflect->GetDesc(&desc);
-		if (FAILED(hr))
+		if (FAILED(hr) )
 		{
 			fprintf(stderr, "Error: ID3D11ShaderReflection::GetDesc failed 0x%08x\n", (uint32_t)hr);
 			return false;
@@ -382,7 +439,7 @@ namespace bgfx
 
 			_size = (uint16_t)bufferDesc.Size;
 
-			if (SUCCEEDED(hr))
+			if (SUCCEEDED(hr) )
 			{
 				BX_TRACE("%s, %d, vars %d, size %d"
 					, bufferDesc.Name
@@ -397,16 +454,16 @@ namespace bgfx
 					ID3D11ShaderReflectionType* type = var->GetType();
 					D3D11_SHADER_VARIABLE_DESC varDesc;
 					hr = var->GetDesc(&varDesc);
-					if (SUCCEEDED(hr))
+					if (SUCCEEDED(hr) )
 					{
 						D3D11_SHADER_TYPE_DESC constDesc;
 						hr = type->GetDesc(&constDesc);
-						if (SUCCEEDED(hr))
+						if (SUCCEEDED(hr) )
 						{
 							UniformType::Enum uniformType = findUniformType(constDesc);
 
 							if (UniformType::Count != uniformType
-								&& 0 != (varDesc.uFlags & D3D_SVF_USED))
+							&&  0 != (varDesc.uFlags & D3D_SVF_USED) )
 							{
 								Uniform un;
 								un.name = varDesc.Name;
@@ -426,7 +483,7 @@ namespace bgfx
 							}
 							else
 							{
-								if (0 == (varDesc.uFlags & D3D_SVF_USED))
+								if (0 == (varDesc.uFlags & D3D_SVF_USED) )
 								{
 									unusedUniforms.push_back(varDesc.Name);
 								}
@@ -445,7 +502,7 @@ namespace bgfx
 			D3D11_SHADER_INPUT_BIND_DESC bindDesc;
 
 			hr = reflect->GetResourceBindingDesc(ii, &bindDesc);
-			if (SUCCEEDED(hr))
+			if (SUCCEEDED(hr) )
 			{
 				if (D3D_SIT_SAMPLER == bindDesc.Type)
 				{
@@ -460,7 +517,7 @@ namespace bgfx
 					if (NULL != end)
 					{
 						Uniform un;
-						un.name.assign(bindDesc.Name, (end - bindDesc.Name));
+						un.name.assign(bindDesc.Name, (end - bindDesc.Name) );
 						un.type = UniformType::Enum(BGFX_UNIFORM_SAMPLERBIT | UniformType::Int1);
 						un.num = 1;
 						un.regIndex = bindDesc.BindPoint;
@@ -488,26 +545,7 @@ namespace bgfx
 			return false;
 		}
 
-		void* d3dcompilerdll = bx::dlopen("D3DCompiler_47.dll");
-		if (NULL == d3dcompilerdll)
-		{
-			fprintf(stderr, "Error: Unable to open D3DCompiler_47.dll shader compiler.\n");
-			return false;
-		}
-
-		D3DCompile     = (PFN_D3D_COMPILE     )bx::dlsym(d3dcompilerdll, "D3DCompile");
-		D3DDisassemble = (PFN_D3D_DISASSEMBLE )bx::dlsym(d3dcompilerdll, "D3DDisassemble");
-		D3DReflect     = (PFN_D3D_REFLECT     )bx::dlsym(d3dcompilerdll, "D3DReflect");
-		D3DStripShader = (PFN_D3D_STRIP_SHADER)bx::dlsym(d3dcompilerdll, "D3DStripShader");
-
-		if (NULL == D3DCompile
-		||  NULL == D3DDisassemble
-		||  NULL == D3DReflect
-		||  NULL == D3DStripShader)
-		{
-			bx::dlclose(d3dcompilerdll);
-			return false;
-		}
+		s_compiler = load();
 
 		bool result = false;
 		bool debug = _cmdLine.hasArg('\0', "debug");
@@ -528,7 +566,7 @@ namespace bgfx
 		}
 
 		uint32_t optimization = 3;
-		if (_cmdLine.hasArg(optimization, 'O'))
+		if (_cmdLine.hasArg(optimization, 'O') )
 		{
 			optimization = bx::uint32_min(optimization, BX_COUNTOF(s_optimizationLevelD3D11) - 1);
 			flags |= s_optimizationLevelD3D11[optimization];
@@ -553,7 +591,7 @@ namespace bgfx
 		{
 			hlslfp = _cmdLine.findOption('o');
 			hlslfp += ".hlsl";
-			writeFile(hlslfp.c_str(), _code.c_str(), (int32_t)_code.size());
+			writeFile(hlslfp.c_str(), _code.c_str(), (int32_t)_code.size() );
 		}
 
 		HRESULT hr = D3DCompile(_code.c_str()
@@ -569,7 +607,7 @@ namespace bgfx
 			, &errorMsg
 			);
 		if (FAILED(hr)
-		|| (werror && NULL != errorMsg))
+		|| (werror && NULL != errorMsg) )
 		{
 			const char* log = (char*)errorMsg->GetBufferPointer();
 
@@ -579,7 +617,7 @@ namespace bgfx
 			int32_t end = INT32_MAX;
 
 			if (2 == sscanf(log, "(%u,%u):", &line, &column)
-				&& 0 != line)
+			&&  0 != line)
 			{
 				start = bx::uint32_imax(1, line - 10);
 				end = start + 20;
@@ -598,7 +636,7 @@ namespace bgfx
 
 		if (_d3d == 9)
 		{
-			if (!getReflectionDataD3D9(code, uniforms))
+			if (!getReflectionDataD3D9(code, uniforms) )
 			{
 				fprintf(stderr, "Error: Unable to get D3D9 reflection data.\n");
 				goto error;
@@ -620,8 +658,8 @@ namespace bgfx
 
 				// first time through, we just find unused uniforms and get rid of them
 				std::string output;
-				LineReader reader(_code.c_str());
-				while (!reader.isEof())
+				LineReader reader(_code.c_str() );
+				while (!reader.isEof() )
 				{
 					std::string line = reader.getLine();
 					for (UniformNameList::iterator it = unusedUniforms.begin(), itEnd = unusedUniforms.end(); it != itEnd; ++it)
@@ -637,7 +675,7 @@ namespace bgfx
 						// included in the uniform blob that the application must upload
 						// we can't just remove them, because unused functions might still reference
 						// them and cause a compile error when they're gone
-						if (!!bx::findIdentifierMatch(line.c_str(), it->c_str()))
+						if (!!bx::findIdentifierMatch(line.c_str(), it->c_str() ) )
 						{
 							line = line.replace(index, strLength, "static");
 							unusedUniforms.erase(it);
@@ -689,7 +727,7 @@ namespace bgfx
 				, &stripped
 				);
 
-			if (SUCCEEDED(hr))
+			if (SUCCEEDED(hr) )
 			{
 				code->Release();
 				code = stripped;
@@ -707,12 +745,12 @@ namespace bgfx
 		if (_d3d > 9)
 		{
 			bx::write(_writer, numAttrs);
-			bx::write(_writer, attrs, numAttrs*sizeof(uint16_t));
+			bx::write(_writer, attrs, numAttrs*sizeof(uint16_t) );
 
 			bx::write(_writer, size);
 		}
 
-		if (_cmdLine.hasArg('\0', "disasm"))
+		if (_cmdLine.hasArg('\0', "disasm") )
 		{
 			ID3DBlob* disasm;
 			D3DDisassemble(code->GetBufferPointer()
@@ -727,7 +765,7 @@ namespace bgfx
 				std::string disasmfp = _cmdLine.findOption('o');
 				disasmfp += ".disasm";
 
-				writeFile(disasmfp.c_str(), disasm->GetBufferPointer(), (uint32_t)disasm->GetBufferSize());
+				writeFile(disasmfp.c_str(), disasm->GetBufferPointer(), (uint32_t)disasm->GetBufferSize() );
 				disasm->Release();
 			}
 		}
@@ -741,7 +779,7 @@ namespace bgfx
 
 	error:
 		code->Release();
-		bx::dlclose(d3dcompilerdll);
+		unload();
 		return result;
 	}
 

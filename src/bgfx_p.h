@@ -450,13 +450,7 @@ namespace bgfx
 				const uint32_t width  = (bx::uint32_min(m_width,  _width +_x)-_x)*2;
 				const uint32_t height =  bx::uint32_min(m_height, _height+_y)-_y;
 				const uint32_t dstPitch = m_width*2;
-
-				for (uint32_t yy = 0; yy < height; ++yy)
-				{
-					memcpy(dst, src, width);
-					dst += dstPitch;
-					src += _pitch;
-				}
+				bx::memCopy(dst, src, width, height, _pitch, dstPitch);
 			}
 		}
 
@@ -579,8 +573,14 @@ namespace bgfx
 	const char* getPredefinedUniformName(PredefinedUniform::Enum _enum);
 	PredefinedUniform::Enum nameToPredefinedUniformEnum(const char* _name);
 
-	struct CommandBuffer
+	class CommandBuffer
 	{
+		BX_CLASS(CommandBuffer
+			, NO_COPY
+			, NO_ASSIGNMENT
+			);
+
+	public:
 		CommandBuffer()
 			: m_pos(0)
 			, m_size(BGFX_CONFIG_MAX_COMMAND_BUFFER_SIZE)
@@ -627,7 +627,7 @@ namespace bgfx
 		void write(const void* _data, uint32_t _size)
 		{
 			BX_CHECK(m_size == BGFX_CONFIG_MAX_COMMAND_BUFFER_SIZE, "Called write outside start/finish?");
-			BX_CHECK(m_pos < m_size, "");
+			BX_CHECK(m_pos < m_size, "CommandBuffer::write error (pos: %d, size: %d).", m_pos, m_size);
 			memcpy(&m_buffer[m_pos], _data, _size);
 			m_pos += _size;
 		}
@@ -641,7 +641,7 @@ namespace bgfx
 
 		void read(void* _data, uint32_t _size)
 		{
-			BX_CHECK(m_pos < m_size, "");
+			BX_CHECK(m_pos < m_size, "CommandBuffer::read error (pos: %d, size: %d).", m_pos, m_size);
 			memcpy(_data, &m_buffer[m_pos], _size);
 			m_pos += _size;
 		}
@@ -655,7 +655,7 @@ namespace bgfx
 
 		const uint8_t* skip(uint32_t _size)
 		{
-			BX_CHECK(m_pos < m_size, "");
+			BX_CHECK(m_pos < m_size, "CommandBuffer::skip error (pos: %d, size: %d).", m_pos, m_size);
 			const uint8_t* result = &m_buffer[m_pos];
 			m_pos += _size;
 			return result;
@@ -697,10 +697,6 @@ namespace bgfx
 		uint32_t m_pos;
 		uint32_t m_size;
 		uint8_t m_buffer[BGFX_CONFIG_MAX_COMMAND_BUFFER_SIZE];
-
-	private:
-		CommandBuffer(const CommandBuffer&);
-		void operator=(const CommandBuffer&);
 	};
 
 #define SORT_KEY_NUM_BITS_TRANS        2
@@ -932,6 +928,10 @@ namespace bgfx
 
 		float* toPtr(uint32_t _cacheIdx)
 		{
+			BX_CHECK(_cacheIdx < BGFX_CONFIG_MAX_MATRIX_CACHE, "Matrix cache out of bounds index %d (max: %d)"
+				, _cacheIdx
+				, BGFX_CONFIG_MAX_MATRIX_CACHE
+				);
 			return m_cache[_cacheIdx].un.val;
 		}
 
@@ -1500,8 +1500,12 @@ namespace bgfx
 
 		void setTransform(uint32_t _cache, uint16_t _num)
 		{
+			BX_CHECK(_cache < BGFX_CONFIG_MAX_MATRIX_CACHE, "Matrix cache out of bounds index %d (max: %d)"
+				, _cache
+				, BGFX_CONFIG_MAX_MATRIX_CACHE
+				);
 			m_draw.m_matrix = _cache;
-			m_draw.m_num    = _num;
+			m_draw.m_num    = uint16_t(bx::uint32_min(_cache+_num, BGFX_CONFIG_MAX_MATRIX_CACHE-1) - _cache);
 		}
 
 		void setIndexBuffer(IndexBufferHandle _handle, uint32_t _firstIndex, uint32_t _numIndices)
@@ -2049,7 +2053,7 @@ namespace bgfx
 		virtual void overrideInternal(TextureHandle _handle, uintptr_t _ptr) = 0;
 		virtual uintptr_t getInternal(TextureHandle _handle) = 0;
 		virtual void destroyTexture(TextureHandle _handle) = 0;
-		virtual void createFrameBuffer(FrameBufferHandle _handle, uint8_t _num, const TextureHandle* _textureHandles) = 0;
+		virtual void createFrameBuffer(FrameBufferHandle _handle, uint8_t _num, const Attachment* _attachment) = 0;
 		virtual void createFrameBuffer(FrameBufferHandle _handle, void* _nwh, uint32_t _width, uint32_t _height, TextureFormat::Enum _depthFormat) = 0;
 		virtual void destroyFrameBuffer(FrameBufferHandle _handle) = 0;
 		virtual void createUniform(UniformHandle _handle, UniformType::Enum _type, uint16_t _num, const char* _name) = 0;
@@ -2792,14 +2796,14 @@ namespace bgfx
 
 				for (uint32_t ii = 0; ii < count; ++ii)
 				{
-					uint8_t nameSize;
+					uint8_t nameSize = 0;
 					bx::read(&reader, nameSize);
 
 					char name[256];
 					bx::read(&reader, &name, nameSize);
 					name[nameSize] = '\0';
 
-					uint8_t type;
+					uint8_t type = 0;
 					bx::read(&reader, type);
 					type &= ~BGFX_UNIFORM_MASK;
 
@@ -3193,14 +3197,14 @@ namespace bgfx
 			cmdbuf.write(_mem);
 		}
 
-		bool checkFrameBuffer(uint8_t _num, const TextureHandle* _handles) const
+		bool checkFrameBuffer(uint8_t _num, const Attachment* _attachment) const
 		{
 			uint8_t color = 0;
 			uint8_t depth = 0;
 
 			for (uint32_t ii = 0; ii < _num; ++ii)
 			{
-				TextureHandle texHandle = _handles[ii];
+				TextureHandle texHandle = _attachment[ii].handle;
 				if (isDepth(TextureFormat::Enum(m_textureRef[texHandle.idx].m_format)))
 				{
 					++depth;
@@ -3216,9 +3220,9 @@ namespace bgfx
 				;
 		}
 
-		BGFX_API_FUNC(FrameBufferHandle createFrameBuffer(uint8_t _num, const TextureHandle* _handles, bool _destroyTextures) )
+		BGFX_API_FUNC(FrameBufferHandle createFrameBuffer(uint8_t _num, const Attachment* _attachment, bool _destroyTextures) )
 		{
-			BX_CHECK(checkFrameBuffer(_num, _handles)
+			BX_CHECK(checkFrameBuffer(_num, _attachment)
 				, "Too many frame buffer attachments (num attachments: %d, max color attachments %d)!"
 				, _num
 				, g_caps.maxFBAttachments
@@ -3237,26 +3241,26 @@ namespace bgfx
 				FrameBufferRef& ref = m_frameBufferRef[handle.idx];
 				ref.m_window = false;
 				memset(ref.un.m_th, 0xff, sizeof(ref.un.m_th) );
-				BackbufferRatio::Enum bbRatio = BackbufferRatio::Enum(m_textureRef[_handles[0].idx].m_bbRatio);
+				BackbufferRatio::Enum bbRatio = BackbufferRatio::Enum(m_textureRef[_attachment[0].handle.idx].m_bbRatio);
 				for (uint32_t ii = 0; ii < _num; ++ii)
 				{
-					TextureHandle texHandle = _handles[ii];
+					TextureHandle texHandle = _attachment[ii].handle;
 					BGFX_CHECK_HANDLE("createFrameBuffer texture handle", m_textureHandle, texHandle);
 					BX_CHECK(bbRatio == m_textureRef[texHandle.idx].m_bbRatio, "Mismatch in texture back-buffer ratio.");
 					BX_UNUSED(bbRatio);
 
-					cmdbuf.write(texHandle);
-
 					ref.un.m_th[ii] = texHandle;
 					textureIncRef(texHandle);
 				}
+
+				cmdbuf.write(_attachment, sizeof(Attachment) * _num);
 			}
 
 			if (_destroyTextures)
 			{
 				for (uint32_t ii = 0; ii < _num; ++ii)
 				{
-					textureTakeOwnership(_handles[ii]);
+					textureTakeOwnership(_attachment[ii].handle);
 				}
 			}
 
