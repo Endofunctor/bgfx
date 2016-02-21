@@ -2201,11 +2201,16 @@ namespace bgfx { namespace gl
 
                 void readPixels(FrameBufferHandle _handle, uint32_t _x, uint32_t _y, uint32_t _width, uint32_t _height, void* _data) BX_OVERRIDE
                 {
-                        const FrameBufferGL& frameBuffer = m_frameBuffers[_handle.idx];
-                        const TextureGL& texture = m_textures[frameBuffer.m_th[0].idx];
-                        GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, frameBuffer.m_fbo[0]) );
-			GL_CHECK(glReadBuffer(GL_COLOR_ATTACHMENT0) );
+                        GLint framebufferBinding = 0;
+                        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebufferBinding);
 
+                        const FrameBufferGL& frameBuffer = m_frameBuffers[_handle.idx];
+                        GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, frameBuffer.m_fbo[0]) );
+
+
+#ifndef BX_PLATFORM_ANDROID
+                        GL_CHECK(glReadBuffer(GL_COLOR_ATTACHMENT0));
+#endif
                         GL_CHECK(glReadPixels(_x
                                               , _y
                                               , _width
@@ -2215,7 +2220,7 @@ namespace bgfx { namespace gl
                                               , _data
                                    ) );
 
-                        GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, 0) );
+                        GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, framebufferBinding) );
                 }
 
                 void resizeTexture(TextureHandle _handle, uint16_t _width, uint16_t _height) BX_OVERRIDE
